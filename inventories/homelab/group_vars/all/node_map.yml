@@ -1,0 +1,9 @@
+---
+# Logical node names for `-e nodes=ubuntu,omv` (comma-separated), mapped to inventory
+# hostnames (the same names as ../cluster-automation's pve_linux inventory). Nodes are
+# the guests the Proxmox host manages; omit -e nodes= to act on all of them.
+hostname_map:
+  ubuntu: ubuntu
+  win11: win11
+  omv: omv
+  jellyfin: jellyfin

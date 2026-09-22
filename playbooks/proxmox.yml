@@ -1,0 +1,51 @@
+---
+- name: Resolve Proxmox guest targets
+  hosts: localhost
+  gather_facts: false
+  become: false
+
+  pre_tasks:
+    - name: Validate action parameter
+      ansible.builtin.assert:
+        that:
+          - proxmox_action | default('status') in ['status', 'mounts', 'unprivileged_lxc', 'nfs_mount']
+        fail_msg: >-
+          Invalid proxmox_action parameter. Must be one of: status, mounts, unprivileged_lxc, nfs_mount.
+          Use playbooks/power_manager.yml -e mode=start|stop|restart to power guests.
+
+    - name: Check parameters for valid nodes
+      ansible.builtin.include_role:
+        name: common
+        tasks_from: node_check.yml
+
+    - name: Translate the selected nodes into Proxmox vmids
+      ansible.builtin.set_fact:
+        proxmox_node_vmids: "{{ resolved_hosts | map('extract', hostvars, 'proxmox_vmid') | list }}"
+
+    - name: Show selected vmids
+      ansible.builtin.debug:
+        msg: "Selected vmids: {{ proxmox_node_vmids }}"
+      when: debug | default(false) | bool
+
+- name: Proxmox guest orchestration
+  hosts: hypervisor
+  gather_facts: false
+
+  pre_tasks:
+    - name: Import the selected vmids from localhost
+      ansible.builtin.set_fact:
+        proxmox_target_vmids: "{{ hostvars['localhost'].proxmox_node_vmids }}"
+
+  roles:
+    - proxmox
+
+  # Manage the Proxmox guests. proxmox_action defaults to 'status' (read-only).
+  # Power actions (start/stop/restart) live in playbooks/power_manager.yml.
+  # Example command line to run this playbook:
+  # Report the state of the selected guests:
+  # ansible-playbook playbooks/proxmox.yml -e nodes=omv,jellyfin [-e proxmox_action=status]
+  # Mount OMV's NFS share on the Proxmox host, configure the LXC bind mount:
+  # ansible-playbook playbooks/proxmox.yml -e proxmox_action=nfs_mount
+  # ansible-playbook playbooks/proxmox.yml -e proxmox_action=mounts
+  # ansible-playbook playbooks/proxmox.yml -e proxmox_action=unprivileged_lxc
+  # Add -e debug=true to any of these to print the resolved nodes/vmids.

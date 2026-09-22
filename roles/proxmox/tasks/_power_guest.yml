@@ -1,0 +1,33 @@
+---
+# Fires a single qm/pct power command for one guest, proxmox_power_vmid. Not meant
+# to be included directly — power.yml loops over this with proxmox_power_cmd set.
+#
+# Idempotent: a start is skipped for a guest that is already running, and a
+# shutdown for one that is already stopped. A shutdown is graceful first and forced
+# after proxmox_shutdown_timeout (qm/pct shutdown --timeout N --forceStop 1).
+#
+# proxmox_power_parallel=false (default): poll:N blocks until the command returns,
+# so guests within a loop come up/down one at a time in the given order.
+# proxmox_power_parallel=true: poll:0 fires the command and moves on immediately;
+# no per-guest completion is awaited (use `make status` to verify state
+# afterward).
+
+- name: Query the current power state of the target guest
+  ansible.builtin.command: "{{ proxmox_power_cmd.split()[0] }} status {{ proxmox_power_vmid }}"
+  register: proxmox_power_state
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Run qm/pct power command for the target guest
+  ansible.builtin.command: >-
+    {{ proxmox_power_cmd }} {{ proxmox_power_vmid }}{{
+      ' --timeout ' ~ proxmox_shutdown_timeout ~ ' --forceStop 1'
+      if proxmox_power_cmd.endswith(' shutdown') else '' }}
+  async: "{{ proxmox_power_wait_timeout }}"
+  poll: "{{ 0 if proxmox_power_parallel else proxmox_power_poll_interval }}"
+  changed_when: true
+  when: >-
+    ('running' not in proxmox_power_state.stdout)
+    if proxmox_power_cmd.endswith(' start')
+    else ('running' in proxmox_power_state.stdout)

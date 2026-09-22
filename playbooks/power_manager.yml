@@ -1,0 +1,52 @@
+---
+- name: Resolve power manager targets
+  hosts: localhost
+  gather_facts: false
+  become: false
+
+  pre_tasks:
+    - name: Validate mode parameter
+      ansible.builtin.assert:
+        that:
+          - mode in ['start', 'stop', 'restart']
+        fail_msg: "Invalid mode parameter. Must be one of: start, stop, restart."
+
+    - name: Check parameters for valid nodes
+      ansible.builtin.include_role:
+        name: common
+        tasks_from: node_check.yml
+
+    - name: Translate the selected nodes into Proxmox vmids
+      ansible.builtin.set_fact:
+        power_manager_vmids: "{{ resolved_hosts | map('extract', hostvars, 'proxmox_vmid') | list }}"
+
+    - name: Show selected vmids
+      ansible.builtin.debug:
+        msg: "Selected vmids: {{ power_manager_vmids }}"
+      when: debug | default(false) | bool
+
+- name: Power manager
+  hosts: hypervisor
+  gather_facts: false
+
+  pre_tasks:
+    - name: Import the selected vmids from localhost
+      ansible.builtin.set_fact:
+        proxmox_target_vmids: "{{ hostvars['localhost'].power_manager_vmids }}"
+
+  roles:
+    - role: proxmox
+      vars:
+        proxmox_action: "{{ mode }}"
+
+  # Power manage homelab guests (start/stop/restart, in proxmox_boot_order /
+  # proxmox_shutdown_order). Guests already in the target state are skipped, so
+  # this is safe to re-run.
+  # Example command line to run this playbook:
+  # Start every guest:
+  # ansible-playbook playbooks/power_manager.yml -e mode=start
+  # Stop a single guest:
+  # ansible-playbook playbooks/power_manager.yml -e nodes=jellyfin -e mode=stop
+  # Restart a single guest:
+  # ansible-playbook playbooks/power_manager.yml -e nodes=jellyfin -e mode=restart
+  # Add -e debug=true to any of these to print the resolved nodes/vmids.

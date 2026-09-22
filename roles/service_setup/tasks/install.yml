@@ -1,0 +1,37 @@
+---
+- name: Check that the repo root looks like a proxmox-automation checkout
+  ansible.builtin.stat:
+    path: "{{ service_setup_repo_root }}/playbooks/boot.yml"
+  register: service_setup_boot_playbook
+
+- name: Fail if boot.yml is not there
+  ansible.builtin.fail:
+    msg: "{{ service_setup_repo_root }} does not contain playbooks/boot.yml"
+  when: not service_setup_boot_playbook.stat.exists
+
+- name: Create the overrides directory
+  ansible.builtin.file:
+    path: "{{ service_setup_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the systemd unit
+  ansible.builtin.template:
+    src: proxmox-automation.service.j2
+    dest: "{{ service_setup_unit }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Enable and start the service
+  ansible.builtin.systemd:
+    name: proxmox-automation.service
+    enabled: true
+    state: started
+  when: service_setup_enable | bool

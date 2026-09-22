@@ -1,0 +1,51 @@
+---
+# Starts/stops/restarts proxmox_target_vmids in proxmox_boot_order (or its reverse
+# for stop), honoring proxmox_power_parallel. QEMU guests get a graceful ACPI
+# shutdown attempt before any hard stop; LXCs use pct's native reboot/stop.
+
+- name: Resolve ordered target list with type metadata
+  ansible.builtin.set_fact:
+    proxmox_power_order: >-
+      {{ (proxmox_action == 'stop') | ternary(proxmox_shutdown_order, proxmox_boot_order) }}
+    proxmox_power_targets: "{{ proxmox_managed_guests | selectattr('vmid', 'in', proxmox_target_vmid_list) | list }}"
+
+- name: Build vmid -> type lookup
+  ansible.builtin.set_fact:
+    proxmox_power_type_map: "{{ dict(proxmox_power_targets | map(attribute='vmid') | zip(proxmox_power_targets | map(attribute='type'))) }}"
+
+- name: Start guests in boot order
+  when: proxmox_action == 'start'
+  ansible.builtin.include_tasks: _power_guest.yml
+  loop: "{{ proxmox_power_order | select('in', proxmox_power_type_map.keys() | map('int') | list) | list }}"
+  loop_control:
+    loop_var: proxmox_power_vmid
+  vars:
+    proxmox_power_cmd: "{{ 'qm start' if proxmox_power_type_map[proxmox_power_vmid] == 'qemu' else 'pct start' }}"
+
+- name: Stop guests in shutdown order
+  when: proxmox_action == 'stop'
+  ansible.builtin.include_tasks: _power_guest.yml
+  loop: "{{ proxmox_power_order | select('in', proxmox_power_type_map.keys() | map('int') | list) | list }}"
+  loop_control:
+    loop_var: proxmox_power_vmid
+  vars:
+    proxmox_power_cmd: "{{ 'qm shutdown' if proxmox_power_type_map[proxmox_power_vmid] == 'qemu' else 'pct shutdown' }}"
+
+- name: Restart guests (stop then start, shutdown order then boot order)
+  when: proxmox_action == 'restart'
+  block:
+    - name: Restart / stop phase
+      ansible.builtin.include_tasks: _power_guest.yml
+      loop: "{{ proxmox_shutdown_order | select('in', proxmox_power_type_map.keys() | map('int') | list) | list }}"
+      loop_control:
+        loop_var: proxmox_power_vmid
+      vars:
+        proxmox_power_cmd: "{{ 'qm shutdown' if proxmox_power_type_map[proxmox_power_vmid] == 'qemu' else 'pct shutdown' }}"
+
+    - name: Restart / start phase
+      ansible.builtin.include_tasks: _power_guest.yml
+      loop: "{{ proxmox_boot_order | select('in', proxmox_power_type_map.keys() | map('int') | list) | list }}"
+      loop_control:
+        loop_var: proxmox_power_vmid
+      vars:
+        proxmox_power_cmd: "{{ 'qm start' if proxmox_power_type_map[proxmox_power_vmid] == 'qemu' else 'pct start' }}"

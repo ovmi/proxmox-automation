@@ -1,0 +1,51 @@
+---
+# Mounts OMV's NFS export on the Proxmox host (proxmox_nfs_mount_point) and
+# persists it in /etc/fstab. This runs right after OMV is started, so it first waits
+# for the VM to boot (SSH), then briefly for its NFS server: a running OMV that is
+# not serving NFS (no export created yet) fails after proxmox_nfs_service_timeout
+# instead of waiting out the whole boot time. The LXC bind mount (tasks/mounts.yml)
+# exposes the mount to Jellyfin, so this must happen before that container starts.
+# Needs nfs-common on the host (installed with Proxmox).
+
+- name: Wait for the OMV VM to boot
+  ansible.builtin.wait_for:
+    host: "{{ proxmox_nfs_server }}"
+    port: 22
+    timeout: "{{ proxmox_nfs_wait_timeout }}"
+    msg: >-
+      OMV ({{ proxmox_nfs_server }}) did not answer on SSH within
+      {{ proxmox_nfs_wait_timeout }} s; check that VM 203 is running.
+
+- name: Wait for the OMV NFS server
+  ansible.builtin.wait_for:
+    host: "{{ proxmox_nfs_server }}"
+    port: 2049
+    timeout: "{{ proxmox_nfs_service_timeout }}"
+    msg: >-
+      OMV is up but not serving NFS on port 2049 after {{ proxmox_nfs_service_timeout }} s.
+      Enable the NFS service and create the export {{ omv_nfs_export_path }} in the OMV web
+      UI (README.md step 6), then run this again.
+
+# Only created when missing: once mounted, this path is the NFS share's root, whose
+# ownership and mode belong to OMV, so an existing mount point is left untouched.
+- name: Look for the mount point
+  ansible.builtin.stat:
+    path: "{{ proxmox_nfs_mount_point }}"
+  register: proxmox_nfs_mount_point_stat
+
+- name: Create the mount point
+  ansible.builtin.file:
+    path: "{{ proxmox_nfs_mount_point }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: not proxmox_nfs_mount_point_stat.stat.exists
+
+- name: Mount the NFS export and persist it in /etc/fstab
+  ansible.posix.mount:
+    path: "{{ proxmox_nfs_mount_point }}"
+    src: "{{ proxmox_nfs_server }}:{{ proxmox_nfs_export }}"
+    fstype: nfs
+    opts: "{{ proxmox_nfs_mount_options }}"
+    state: mounted

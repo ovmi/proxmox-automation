@@ -1,0 +1,32 @@
+# Proxmox homelab: the Proxmox host and its four guests (Ubuntu VM 201 for AI
+# workloads, Windows VM 202 for tools and management, OpenMediaVault VM 203 for
+# media and shared directories, Jellyfin LXC 204 as the media library). Update
+# ansible_host / ansible_user to match your environment. proxmox_vmid links a
+# guest to its Proxmox id: `-e nodes=` (see group_vars/all/node_map.yml) selects
+# guests, and the playbooks turn them into vmids through it.
+#
+# SSH keys, system updates and base configuration for these machines are done by
+# ../cluster-automation (inventories/pve_linux); the Raspberry Pi cluster is in
+# that repo too. Host and group names are the same as in that inventory (pve, ubuntu,
+# omv, jellyfin, win11; groups hypervisor, guests, windows), so a name means the same
+# machine in both repos.
+
+[local]
+localhost ansible_connection=local
+
+[hypervisor]
+pve ansible_connection=ssh ansible_host=192.168.100.200 ansible_user=root
+
+[guests]
+ubuntu ansible_connection=ssh ansible_host=192.168.100.201 ansible_user=ovmi proxmox_vmid=201
+omv ansible_connection=ssh ansible_host=192.168.100.203 ansible_user=root proxmox_vmid=203
+jellyfin ansible_connection=ssh ansible_host=192.168.100.204 ansible_user=root proxmox_vmid=204
+
+# Windows 11 (VM 202) over WinRM, listed for reference. Playbooks reach it only
+# through the Proxmox host (power actions), never over WinRM.
+[windows]
+win11 ansible_connection=winrm ansible_host=192.168.100.202 ansible_user=Administrator ansible_winrm_transport=ntlm ansible_winrm_server_cert_validation=ignore ansible_port=5986 proxmox_vmid=202
+
+[cluster:children]
+hypervisor
+guests

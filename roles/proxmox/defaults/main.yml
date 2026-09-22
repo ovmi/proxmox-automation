@@ -1,0 +1,57 @@
+---
+# Action dispatcher. One of: status, start, stop, restart, mounts, unprivileged_lxc, nfs_mount.
+# Set via -e proxmox_action=mounts on playbooks/proxmox.yml (status, mounts,
+# unprivileged_lxc, nfs_mount), or -e mode=start on playbooks/power_manager.yml
+# (start, stop, restart, translated to proxmox_action there); left at its default for a
+# read-only status check.
+proxmox_action: status
+
+# Guests this role operates on (vmids). playbooks/proxmox.yml sets it from
+# `-e nodes=...`; the default is every managed guest (proxmox_managed_guests in
+# inventories/homelab/group_vars/all/main.yml), for callers that include the role
+# directly (playbooks/boot.yml passes its own list).
+proxmox_target_vmids: "{{ proxmox_managed_guests | map(attribute='vmid') | list }}"
+
+proxmox_power_wait: true
+# Upper bound for one power command (seconds); must exceed proxmox_shutdown_timeout.
+proxmox_power_wait_timeout: 120
+# A graceful qm/pct shutdown still running after this many seconds is forced
+# (--forceStop), so a guest that hangs while stopping cannot stall the run.
+proxmox_shutdown_timeout: 60
+proxmox_power_poll_interval: 5
+
+# Guests started/stopped one at a time (false) or fired concurrently (true).
+# Sequential is the safer default — it respects proxmox_boot_order/shutdown_order
+# and avoids hammering shared storage with simultaneous cold boots.
+proxmox_power_parallel: false
+
+# --- LXC bind mounts consumed by tasks/mounts.yml (pct set -mpN) ---
+# The host path is the NFS mount point below, so the container sees the OMV share.
+proxmox_mounts:
+  - type: bind
+    vmid: 204
+    host_path: "{{ homelab_share_root }}"
+    container_path: /shared
+    mp_index: 0
+    readonly: false
+
+# --- NFS share from OMV, mounted on the Proxmox host by tasks/nfs_mount.yml ---
+# The export itself is created in the OMV web UI (OMV regenerates /etc/exports).
+proxmox_nfs_server: "{{ hostvars[hostname_map['omv']].ansible_host }}"
+# OMV exports over NFSv4 with a pseudo-root at /export (fsid=0), so a v4 client mounts the
+# export path minus that prefix (/export/homelab-share -> /homelab-share), while
+# `showmount -e` and playbooks/status_check.yml use the full omv_nfs_export_path.
+proxmox_nfs_export: "{{ omv_nfs_export_path | regex_replace('^/export(?=/)', '') }}"
+proxmox_nfs_mount_point: "{{ homelab_share_root }}"
+proxmox_nfs_mount_options: "nfsvers=4.2,_netdev,nofail"
+# Seconds to wait for OMV to boot (SSH answers) before mounting, and then for its
+# NFS server (port 2049) to answer once it is up; the second wait is short so a
+# missing export fails quickly instead of waiting out the boot time.
+proxmox_nfs_wait_timeout: 300
+proxmox_nfs_service_timeout: 60
+
+# --- Unprivileged LXC prep consumed by tasks/unprivileged_lxc.yml ---
+proxmox_unprivileged_lxc_vmids:
+  - 204
+proxmox_lxc_subuid_range: "100000:65536"
+proxmox_lxc_subgid_range: "100000:65536"

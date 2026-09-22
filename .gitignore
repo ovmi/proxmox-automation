@@ -1,0 +1,6 @@
+*.retry
+.vault_pass.txt
+*.log
+.venv/
+__pycache__/
+.ansible/

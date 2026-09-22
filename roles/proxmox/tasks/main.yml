@@ -1,0 +1,30 @@
+---
+- name: Validate proxmox_action
+  ansible.builtin.assert:
+    that:
+      - proxmox_action in ['status', 'start', 'stop', 'restart', 'mounts', 'unprivileged_lxc', 'nfs_mount']
+    fail_msg: "proxmox_action must be one of: status, start, stop, restart, mounts, unprivileged_lxc, nfs_mount"
+
+- name: Normalise proxmox_target_vmids (accepts a list, "204" or "203,204")
+  ansible.builtin.set_fact:
+    proxmox_target_vmid_list: "{{ proxmox_target_vmids | string | regex_findall('[0-9]+') | map('int') | list }}"
+
+- name: Report guest status
+  ansible.builtin.include_tasks: status.yml
+  when: proxmox_action == 'status'
+
+- name: Manage guest power state
+  ansible.builtin.include_tasks: power.yml
+  when: proxmox_action in ['start', 'stop', 'restart']
+
+- name: Create Proxmox-side mounts
+  ansible.builtin.include_tasks: mounts.yml
+  when: proxmox_action == 'mounts'
+
+- name: Prepare unprivileged LXC access
+  ansible.builtin.include_tasks: unprivileged_lxc.yml
+  when: proxmox_action == 'unprivileged_lxc'
+
+- name: Mount the OMV NFS share on the host
+  ansible.builtin.include_tasks: nfs_mount.yml
+  when: proxmox_action == 'nfs_mount'

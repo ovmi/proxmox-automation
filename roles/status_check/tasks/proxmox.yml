@@ -1,0 +1,42 @@
+---
+- name: Query each managed guest
+  ansible.builtin.command: "{{ 'qm' if item.type == 'qemu' else 'pct' }} status {{ item.vmid }}"
+  loop: "{{ proxmox_managed_guests }}"
+  loop_control:
+    label: "{{ item.name }} (vmid {{ item.vmid }})"
+  register: status_check_guests
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Check that every guest is running
+  ansible.builtin.assert:
+    that: "'running' in item.stdout"
+    success_msg: "OK    {{ item.item.name }} (vmid {{ item.item.vmid }}): running"
+    fail_msg: "FAIL  {{ item.item.name }} (vmid {{ item.item.vmid }}): {{ item.stdout | default(item.stderr) | default('unreachable', true) }}"
+  loop: "{{ status_check_guests.results }}"
+  loop_control:
+    label: "{{ item.item.name }} (vmid {{ item.item.vmid }})"
+  register: status_check_guest_checks
+  ignore_errors: true
+
+- name: Check the NFS mount on the host
+  ansible.builtin.command: "findmnt -n -t nfs,nfs4 {{ homelab_share_root }}"
+  register: status_check_host_mount
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Check that the share is NFS-mounted on the host
+  ansible.builtin.assert:
+    that: status_check_host_mount.rc == 0
+    success_msg: "OK    {{ homelab_share_root }} is an NFS mount on the Proxmox host"
+    fail_msg: "FAIL  {{ homelab_share_root }} is not an NFS mount on the Proxmox host"
+  register: status_check_host_check
+  ignore_errors: true
+
+# The two checks above are ignored so both always run; fail here if either did.
+- name: Fail if a Proxmox host check failed
+  ansible.builtin.fail:
+    msg: "Proxmox host checks failed, see the FAIL lines above"
+  when: (status_check_guest_checks.failed | default(false)) or (status_check_host_check.failed | default(false))

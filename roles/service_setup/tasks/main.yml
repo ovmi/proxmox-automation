@@ -1,0 +1,8 @@
+---
+- name: Include the service installation
+  ansible.builtin.include_tasks: install.yml
+  when: service_setup_mode == 'install'
+
+- name: Include the service removal
+  ansible.builtin.include_tasks: uninstall.yml
+  when: service_setup_mode == 'uninstall'

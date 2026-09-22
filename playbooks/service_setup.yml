@@ -1,0 +1,26 @@
+---
+- name: Install or remove the proxmox-automation service
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+
+  pre_tasks:
+    - name: Validate mode parameter
+      ansible.builtin.assert:
+        that:
+          - service_setup_mode in ['install', 'uninstall']
+        fail_msg: "Invalid service_setup_mode parameter. Must be one of: install, uninstall."
+
+  roles:
+    - service_setup
+
+# Install or remove the systemd service on this machine (run as root). Nothing is
+# copied: the unit runs playbooks/boot.yml straight from this checkout, so run
+# install again if you move the checkout. It is installed disabled; add
+# -e service_setup_enable=true to enable and start it right away.
+# Example command line to run this playbook:
+# Install the service:
+# ansible-playbook playbooks/service_setup.yml -e service_setup_mode=install [-e service_setup_enable=true]
+# Remove the service (and /etc/proxmox-automation with the purge flag):
+# ansible-playbook playbooks/service_setup.yml -e service_setup_mode=uninstall [-e service_setup_purge=true]

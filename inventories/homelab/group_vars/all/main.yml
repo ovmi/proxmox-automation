@@ -1,0 +1,48 @@
+---
+# The SSH key is the one cluster-automation's ssh_config generates and installs.
+ansible_ssh_private_key_file: "{{ lookup('env', 'HOMELAB_SSH_KEY') | default('~/.ssh/id_ed25519_cluster', true) }}"
+ansible_ssh_common_args: "-o StrictHostKeyChecking=accept-new"
+
+# Where the OMV NFS share is mounted on the Proxmox host (and bind-mounted into the
+# Jellyfin LXC).
+homelab_share_root: /mnt/homelab-share
+
+# Path OMV exports over NFS. OMV regenerates /etc/exports itself, so create the
+# shared folder and NFS share in the OMV web UI; the shared folder "homelab-share" is
+# exported as /export/homelab-share. Check with `showmount -e <omv>` and adjust.
+omv_nfs_export_path: /export/homelab-share
+
+# Where the share appears inside the Jellyfin container (bind mount mp0 from the
+# host's homelab_share_root, see proxmox_mounts in the proxmox role).
+jellyfin_share_mount_point: /shared
+
+# Guests the Proxmox host manages (proxmox and status_check roles).
+proxmox_managed_guests:
+  - vmid: 201
+    type: qemu
+    name: ubuntu
+  - vmid: 202
+    type: qemu
+    name: win11
+  - vmid: 203
+    type: qemu
+    name: omv
+  - vmid: 204
+    type: lxc
+    name: jellyfin
+
+# Order guests are started in. Storage (OMV) must be up, and its NFS share mounted
+# on the host, before Jellyfin starts; Ubuntu/Windows have no ordering dependency
+# so they start last.
+proxmox_boot_order:
+  - 203
+  - 204
+  - 201
+  - 202
+
+proxmox_shutdown_order: "{{ proxmox_boot_order | reverse | list }}"
+
+# Guests started first by playbooks/boot.yml; the NFS share is mounted on the host
+# once they are up, then the rest of proxmox_boot_order is started.
+proxmox_storage_vmids:
+  - 203

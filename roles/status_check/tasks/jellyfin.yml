@@ -1,0 +1,13 @@
+---
+- name: Check the mount point
+  ansible.builtin.command: "mountpoint -q {{ jellyfin_share_mount_point }}"
+  register: status_check_mount
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Check that the share is mounted
+  ansible.builtin.assert:
+    that: status_check_mount.rc == 0
+    success_msg: "OK    {{ jellyfin_share_mount_point }} is mounted in the Jellyfin LXC"
+    fail_msg: "FAIL  {{ jellyfin_share_mount_point }} is not mounted in the Jellyfin LXC"

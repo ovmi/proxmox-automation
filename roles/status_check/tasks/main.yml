@@ -1,0 +1,15 @@
+---
+# One host at a time picks its own checks; a failure on one host does not stop the
+# others (see playbooks/status_check.yml). The guests are picked by their node
+# names (hostname_map), since a group named like the host would be ambiguous.
+- name: Check the Proxmox host
+  ansible.builtin.include_tasks: proxmox.yml
+  when: inventory_hostname in groups['hypervisor']
+
+- name: Check the OMV NFS export
+  ansible.builtin.include_tasks: omv.yml
+  when: inventory_hostname == hostname_map['omv']
+
+- name: Check the Jellyfin share mount
+  ansible.builtin.include_tasks: jellyfin.yml
+  when: inventory_hostname == hostname_map['jellyfin']

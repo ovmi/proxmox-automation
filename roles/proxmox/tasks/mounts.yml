@@ -1,0 +1,25 @@
+---
+# Configures the LXC bind mounts in proxmox_mounts (pct set -mpN). The host
+# directory they point at is the NFS mount from tasks/nfs_mount.yml. A change to a
+# running container's mount points only applies after it is restarted.
+
+# creates: makes this a no-op for a directory that already exists. That matters
+# because the host path is normally the NFS mount from tasks/nfs_mount.yml, whose
+# ownership and mode belong to OMV and must not be changed from here.
+- name: Ensure host share directories exist
+  ansible.builtin.command:
+    cmd: "mkdir -p {{ item.host_path }}"
+    creates: "{{ item.host_path }}"
+  loop: "{{ proxmox_mounts | list }}"
+  loop_control:
+    label: "{{ item.host_path }}"
+
+- name: Configure bind mounts for LXC guests
+  when: item.type == 'bind'
+  ansible.builtin.command: >-
+    pct set {{ item.vmid }}
+    -mp{{ item.mp_index }} {{ item.host_path }},mp={{ item.container_path }}{{ ',ro=1' if item.readonly | default(false) else '' }}
+  loop: "{{ proxmox_mounts | selectattr('type', 'equalto', 'bind') | list }}"
+  loop_control:
+    label: "vmid {{ item.vmid }} -> {{ item.container_path }}"
+  changed_when: true

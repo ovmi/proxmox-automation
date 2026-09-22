@@ -1,0 +1,28 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Proxmox Automation — start the Proxmox guests and mount the shared storage
+Documentation=https://github.com/ovmi/proxmox-automation
+After=network-online.target pve-cluster.service pve-guests.service
+Wants=network-online.target
+ConditionPathExists={{ service_setup_repo_root }}/playbooks/boot.yml
+StartLimitIntervalSec=1800
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory={{ service_setup_repo_root }}
+Environment=HOME=/root
+EnvironmentFile=-{{ service_setup_config_dir }}/proxmox-automation.env
+ExecStart=/usr/bin/env ansible-playbook playbooks/boot.yml
+TimeoutStartSec=900
+Restart=on-failure
+RestartSec=30
+
+# Deliberately not a fully locked-down sandbox: Ansible needs outbound SSH and
+# access to the Proxmox tools.
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

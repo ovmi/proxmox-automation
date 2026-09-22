@@ -1,0 +1,35 @@
+---
+# Reports current status for every guest in proxmox_target_vmids using the native
+# qm/pct CLIs — no external API dependency, works on any PVE host as root.
+
+- name: Look up guest type for each target vmid
+  ansible.builtin.set_fact:
+    proxmox_status_targets: >-
+      {{ proxmox_managed_guests | selectattr('vmid', 'in', proxmox_target_vmid_list) | list }}
+
+- name: Query qm status for QEMU guests
+  ansible.builtin.command: "qm status {{ item.vmid }}"
+  loop: "{{ proxmox_status_targets | selectattr('type', 'equalto', 'qemu') | list }}"
+  loop_control:
+    label: "{{ item.name }} (vmid {{ item.vmid }})"
+  register: proxmox_qm_status
+  changed_when: false
+  failed_when: false
+
+- name: Query pct status for LXC guests
+  ansible.builtin.command: "pct status {{ item.vmid }}"
+  loop: "{{ proxmox_status_targets | selectattr('type', 'equalto', 'lxc') | list }}"
+  loop_control:
+    label: "{{ item.name }} (vmid {{ item.vmid }})"
+  register: proxmox_pct_status
+  changed_when: false
+  failed_when: false
+
+- name: Print consolidated guest status
+  ansible.builtin.debug:
+    msg: >-
+      {{ item.item.name }} (vmid {{ item.item.vmid }}, {{ item.item.type }}):
+      {{ item.stdout | default('unreachable — ' + (item.stderr | default('unknown error'))) }}
+  loop: "{{ (proxmox_qm_status.results | default([])) + (proxmox_pct_status.results | default([])) }}"
+  loop_control:
+    label: "{{ item.item.name }}"

@@ -1,0 +1,43 @@
+---
+- name: Normalize nodes list
+  ansible.builtin.set_fact:
+    nodes_list: >-
+      {%- if nodes is defined and nodes is string and (nodes | length) > 0 -%}
+        {{ nodes.split(',') | map('trim') | list }}
+      {%- elif nodes is defined and nodes is sequence and (nodes | length) > 0 -%}
+        {{ nodes }}
+      {%- else -%}
+        {{ hostname_map.keys() | list }}
+      {%- endif -%}
+
+- name: Validate nodes exist in hostname_map
+  ansible.builtin.assert:
+    that:
+      - item in hostname_map
+    fail_msg: "Invalid node '{{ item }}'. Valid nodes: {{ hostname_map.keys() | list }}"
+  loop: "{{ nodes_list }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Resolve target hosts
+  ansible.builtin.set_fact:
+    resolved_hosts: "{{ nodes_list | map('extract', hostname_map) | list }}"
+
+- name: Build node to host mapping
+  ansible.builtin.set_fact:
+    node_host_map: "{{ dict(nodes_list | zip(nodes_list | map('extract', hostname_map))) }}"
+
+- name: Show selected nodes
+  ansible.builtin.debug:
+    msg: "Selected nodes: {{ nodes_list }}"
+  when: debug | default(false) | bool
+
+- name: Show resolved nodes
+  ansible.builtin.debug:
+    msg: "Resolved nodes: {{ resolved_hosts }}"
+  when: debug | default(false) | bool
+
+- name: Show node to host mapping
+  ansible.builtin.debug:
+    msg: "Node to host mapping: {{ node_host_map }}"
+  when: debug | default(false) | bool

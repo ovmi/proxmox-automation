@@ -1,0 +1,53 @@
+---
+# Unprivileged LXCs map container UID/GID 0..65535 to an unprivileged host range
+# (default 100000:165535), so a bind-mounted host directory owned by root:root is
+# seen as owned by nobody:nogroup inside the container. This grants each target
+# container's own subuid/subgid range and writes the matching lxc.idmap entries so
+# bind-mounted shares (see tasks/mounts.yml) are readable/writable from inside.
+
+- name: Ensure /etc/subuid has an entry for root
+  ansible.builtin.lineinfile:
+    path: /etc/subuid
+    regexp: '^root:'
+    line: "root:{{ proxmox_lxc_subuid_range }}"
+    create: true
+    mode: "0644"
+
+- name: Ensure /etc/subgid has an entry for root
+  ansible.builtin.lineinfile:
+    path: /etc/subgid
+    regexp: '^root:'
+    line: "root:{{ proxmox_lxc_subgid_range }}"
+    create: true
+    mode: "0644"
+
+- name: Check current idmap configuration for each target LXC
+  ansible.builtin.command: "grep -c '^lxc.idmap' /etc/pve/lxc/{{ item }}.conf"
+  loop: "{{ proxmox_unprivileged_lxc_vmids }}"
+  loop_control:
+    label: "vmid {{ item }}"
+  register: proxmox_idmap_check
+  changed_when: false
+  failed_when: false
+
+- name: Add full-range UID/GID idmap to unprivileged LXC config
+  ansible.builtin.blockinfile:
+    path: "/etc/pve/lxc/{{ item.item }}.conf"
+    marker: "# {mark} ANSIBLE MANAGED IDMAP (proxmox-automation)"
+    block: |
+      lxc.idmap: u 0 100000 65536
+      lxc.idmap: g 0 100000 65536
+  loop: "{{ proxmox_idmap_check.results }}"
+  loop_control:
+    label: "vmid {{ item.item }}"
+  when: item.stdout | default('0') | int == 0
+
+- name: Remind operator that unprivileged LXCs must be restarted for idmap changes to apply
+  ansible.builtin.debug:
+    msg: >-
+      idmap written for vmid {{ item.item }}. Restart it
+      (playbooks/power_manager.yml -e mode=restart) for the new mapping to take effect.
+  loop: "{{ proxmox_idmap_check.results }}"
+  loop_control:
+    label: "vmid {{ item.item }}"
+  when: item.stdout | default('0') | int == 0

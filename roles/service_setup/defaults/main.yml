@@ -1,0 +1,18 @@
+---
+# install | uninstall — set by playbooks/service_setup.yml (-e service_setup_mode=...).
+service_setup_mode: "none"
+
+# Where the systemd unit is written, and the directory for optional overrides
+# (a proxmox-automation.env file of VAR=value lines read by the unit).
+service_setup_unit: /etc/systemd/system/proxmox-automation.service
+service_setup_config_dir: /etc/proxmox-automation
+
+# The service runs the playbooks from this checkout in place (nothing is copied).
+# Default: the repo root, one level above playbooks/.
+service_setup_repo_root: "{{ playbook_dir | dirname }}"
+
+# install: also enable the service and start it now (runs playbooks/boot.yml).
+service_setup_enable: false
+
+# uninstall: also remove service_setup_config_dir.
+service_setup_purge: false

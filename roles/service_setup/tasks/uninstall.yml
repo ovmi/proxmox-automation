@@ -1,0 +1,27 @@
+---
+- name: Look for the installed unit
+  ansible.builtin.stat:
+    path: "{{ service_setup_unit }}"
+  register: service_setup_unit_stat
+
+- name: Stop and disable the service
+  ansible.builtin.systemd:
+    name: proxmox-automation.service
+    enabled: false
+    state: stopped
+  when: service_setup_unit_stat.stat.exists
+
+- name: Remove the systemd unit
+  ansible.builtin.file:
+    path: "{{ service_setup_unit }}"
+    state: absent
+
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Remove the overrides directory
+  ansible.builtin.file:
+    path: "{{ service_setup_config_dir }}"
+    state: absent
+  when: service_setup_purge | bool

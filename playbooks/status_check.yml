@@ -1,0 +1,16 @@
+---
+- name: Check the stack
+  hosts: hypervisor:omv:jellyfin
+  gather_facts: false
+
+  roles:
+    - status_check
+
+  # Read-only status check of the whole stack; the run fails if any check fails.
+  # One play for all three hosts on purpose: Ansible skips later plays once every
+  # host in a play has failed, and a failing check must not hide the others.
+  # Run by `make status` and as the last step of playbooks/boot.yml. Nothing is
+  # changed. (playbooks/proxmox.yml with proxmox_action=status only reports guest
+  # state and never fails.)
+  # Example command line to run this playbook:
+  # ansible-playbook playbooks/status_check.yml

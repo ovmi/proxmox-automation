@@ -1,0 +1,92 @@
+---
+- name: Resolve boot targets
+  hosts: localhost
+  gather_facts: false
+  become: false
+
+  pre_tasks:
+    - name: Check parameters for valid nodes
+      ansible.builtin.include_role:
+        name: common
+        tasks_from: node_check.yml
+
+    - name: Translate the selected nodes into Proxmox vmids
+      ansible.builtin.set_fact:
+        boot_selected_vmids: "{{ resolved_hosts | map('extract', hostvars, 'proxmox_vmid') | map('int') | list }}"
+
+    - name: Show selected vmids
+      ansible.builtin.debug:
+        msg: "Selected vmids: {{ boot_selected_vmids }}"
+      when: debug | default(false) | bool
+
+- name: Bring the stack up
+  hosts: hypervisor
+  gather_facts: false
+
+  pre_tasks:
+    - name: Split the selected guests into storage and the rest
+      ansible.builtin.set_fact:
+        boot_storage_vmids: "{{ proxmox_storage_vmids | intersect(hostvars['localhost'].boot_selected_vmids) }}"
+        boot_other_vmids: >-
+          {{ proxmox_boot_order | intersect(hostvars['localhost'].boot_selected_vmids)
+             | difference(proxmox_storage_vmids) }}
+
+    - name: Show boot plan
+      ansible.builtin.debug:
+        msg:
+          storage: "{{ boot_storage_vmids }}"
+          rest: "{{ boot_other_vmids }}"
+      when: debug | default(false) | bool
+
+  tasks:
+    - name: Start the storage guests
+      ansible.builtin.include_role:
+        name: proxmox
+      vars:
+        proxmox_action: start
+        proxmox_target_vmids: "{{ boot_storage_vmids }}"
+      when: boot_storage_vmids | length > 0
+
+    - name: Mount the OMV NFS share on the host
+      when: boot_storage_vmids | length > 0
+      block:
+        - name: Mount the share
+          ansible.builtin.include_role:
+            name: proxmox
+          vars:
+            proxmox_action: nfs_mount
+      rescue:
+        - name: Report that the share is not mounted
+          ansible.builtin.debug:
+            msg: >-
+              WARNING: the NFS share from OMV is not mounted on the host; starting the
+              other guests anyway. Fix the OMV export and run
+              `ansible-playbook playbooks/proxmox.yml -e proxmox_action=nfs_mount`.
+
+    - name: Start the remaining guests
+      ansible.builtin.include_role:
+        name: proxmox
+      vars:
+        proxmox_action: start
+        proxmox_target_vmids: "{{ boot_other_vmids }}"
+      when: boot_other_vmids | length > 0
+
+- name: Status check
+  ansible.builtin.import_playbook: status_check.yml
+
+# Full homelab boot sequence; this is what the systemd service runs. For a plain
+# start/stop/restart of specific guests outside this sequence, use
+# playbooks/power_manager.yml instead (see README.md#power-management-power_manageryml).
+#   1. start the storage guest (OMV, proxmox_storage_vmids)
+#   2. mount OMV's NFS share on the Proxmox host; a failure here is reported but does
+#      not stop the boot, so the other guests still come up
+#   3. start the remaining guests in proxmox_boot_order (Jellyfin bind-mounts the
+#      host's share, so it must start after step 2)
+#   4. status check (playbooks/status_check.yml); the run fails if any check fails
+# Guests that are already running are left alone, so this is safe to re-run.
+# Example command line to run this playbook:
+# Boot everything:
+# ansible-playbook playbooks/boot.yml
+# Boot only some guests (omit omv to skip the storage steps):
+# ansible-playbook playbooks/boot.yml -e nodes=jellyfin,ubuntu
+# Add -e debug=true to any of these to print the resolved nodes/vmids.
